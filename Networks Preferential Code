@@ -1,0 +1,271 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Mar 15 19:53:09 2021
+
+@author: isabe
+"""
+
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+import networkx as nx
+from scipy.stats import chisquare
+from scipy import stats
+import pandas as pd
+from scipy.optimize import curve_fit
+
+def model(Nf, m) : 
+    N=2*m+1
+    k=np.zeros(Nf)
+    kexp=m                 
+    G=nx.Graph()
+    for i in range(N):
+        G.add_node(i)
+        
+    P=1 #kexp/float(N-1)
+    edges=[]
+    for s in range(N):
+        for t in range(s+1,N):
+            if random.random() <P:
+                G.add_edge(s,t)
+                edges+=[(s,t)]
+                k[s]+=1
+                k[t]+=1
+    
+    t=0
+    while N+t<Nf:
+        G.add_node(N+t)
+        for x in range(m):
+            edge=random.randint(0,len(edges)-1)
+            if random.random()<0.5:
+                node=edges[edge][0]
+            else:
+                node=edges[edge][1]
+            G.add_edge(N+t,node)
+            edges+=[(N+t,node)]
+            k[N+t]+=1
+            k[node]+=1
+            
+            # X=np.arange(0,Nf,1)
+            # plt.plot(X,k)
+            # plt.pause(0.001)
+            # plt.clf()
+        t+=1
+    return k, G
+     
+    # nx.draw_circular(G, with_labels=True) 
+    #X=np.arange(0,Nf,1)
+    # plt.plot(X,k)   
+    #k=signal.savgol_filter(k,101,3)
+    #plt.plot(X,k)    
+        # plt.subplot(221)
+        # nx.draw_circular(Gs[1], with_labels=True)
+        # plt.subplot(222)
+        # nx.draw_circular(Gs[5], with_labels=True)
+        # plt.subplot(223)
+        # nx.draw_circular(Gs[10], with_labels=True)
+        # plt.subplot(224)
+        # nx.draw_circular(Gs[14], with_labels=True)    
+        # plt.show
+
+    
+def logbin(data, scale, zeros = False):
+    """
+    logbin(data, scale = 1., zeros = False)
+
+    Log-bin frequency of unique integer values in data. Returns probabilities
+    for each bin.
+
+    Array, data, is a 1-d array containing full set of event sizes for a
+    given process in no particular order. For instance, in the Oslo Model
+    the array may contain the avalanche size recorded at each time step. For
+    a complex network, the array may contain the degree of each node in the
+    network. The logbin function finds the frequency of each unique value in
+    the data array. The function then bins these frequencies in logarithmically
+    increasing bin sizes controlled by the scale parameter.
+
+    Minimum binsize is always 1. Bin edges are lowered to nearest integer. Bins
+    are always unique, i.e. two different float bin edges corresponding to the
+    same integer interval will not be included twice. Note, rounding to integer
+    values results in noise at small event sizes.
+
+    Parameters
+    ----------
+
+    data: array_like, 1 dimensional, non-negative integers
+          Input array. (e.g. Raw avalanche size data in Oslo model.)
+
+    scale: float, greater or equal to 1.
+          Scale parameter controlling the growth of bin sizes.
+          If scale = 1., function will return frequency of each unique integer
+          value in data with no binning.
+
+    zeros: boolean
+          Set zeros = True if you want binning function to consider events of
+          size 0.
+          Note that output cannot be plotted on log-log scale if data contains
+          zeros. If zeros = False, events of size 0 will be removed from data.
+
+    Returns
+    -------
+
+    x: array_like, 1 dimensional
+          Array of coordinates for bin centres calculated using geometric mean
+          of bin edges. Bins with a count of 0 will not be returned.
+    y: array_like, 1 dimensional
+          Array of normalised frequency counts within each bin. Bins with a
+          count of 0 will not be returned.
+    """
+    if scale < 1:
+        raise ValueError('Function requires scale >= 1.')
+    count = np.bincount(data)
+    tot = np.sum(count)
+    smax = np.max(data)
+    if scale > 1:
+        jmax = np.ceil(np.log(smax)/np.log(scale))
+        if zeros:
+            binedges = scale ** np.arange(jmax + 1)
+            binedges[0] = 0
+        else:
+            binedges = scale ** np.arange(1,jmax + 1)
+            # count = count[1:]
+        binedges = np.unique(binedges.astype('uint64'))
+        x = (binedges[:-1] * (binedges[1:]-1)) ** 0.5
+        y = np.zeros_like(x)
+        count = count.astype('float')
+        for i in range(len(y)):
+            y[i] = np.sum(count[binedges[i]:binedges[i+1]]/(binedges[i+1] - binedges[i]))
+            # print(binedges[i],binedges[i+1])
+        # print(smax,jmax,binedges,x)
+        # print(x,y)
+    else:
+        x = np.nonzero(count)[0]
+        y = count[count != 0].astype('float')
+        if zeros != True and x[0] == 0:
+            x = x[1:]
+            y = y[1:]
+    y /= tot
+    x = x[y!=0]
+    y = y[y!=0]
+    return x,y
+#%%    
+M=[1,2, 4, 8, 16, 32]
+outputx=[]
+outputy = []
+output_theory = []
+outk = []
+run = 30
+Nf = 5000
+for m in M:
+    ks = []
+    for i in range(0,run):
+        k, G = model(Nf, m)    
+        k = list(k)
+        ks = ks + [k]
+    k_flat = [item for sublist in ks for item in sublist]
+    kx, kprob = logbin(k_flat, 1.45)   
+    testk = np.linspace(m, max(k))
+    theory_p = 2*(m+1)*m/(testk*(testk+1)*(testk+2))
+    outputx = outputx + [kx]
+    outputy = outputy + [kprob]
+    outk = outk + [testk]
+    output_theory = output_theory + [theory_p]
+
+colours = ['b', 'g', 'r', 'y', 'grey', 'm']
+for i in range(0, len(M)):
+    plt.loglog(outputx[i], outputy[i], '+', color = colours[i], label = M[i])
+    plt.loglog(outk[i], output_theory[i], '--',color = colours[i]) #label = '$p_\inf$' )
+
+plt.xlabel("k")
+plt.ylabel("$p(k)$")
+plt.legend()
+plt.show()
+#%%
+for i in range(0, len(M)):
+    theoryp = 2*(M[i]+1)*M[i]/(outputx[i]*(outputx[i]+1)*(outputx[i]+2))
+    plt.loglog(theoryp, outputy[i], '+', color = colours[i], label = M[i])
+p = np.linspace(10**-6,1)
+plt.plot(p,p, 'black','--',label = 'y=x')
+plt.xlabel("$p_\inf(k)$")
+plt.ylabel("$p_N(k)$")
+plt.axis(( 1e-6, 1, 1e-6, 1))
+plt.legend()
+plt.show()    
+#%%
+'''Statistics'''
+chi_sqr = []
+p_list = []
+for i in range(0, len(M)):
+    theoryp = 2*(M[i]+1)*M[i]/(outputx[i]*(outputx[i]+1)*(outputx[i]+2))
+    chisqr, P = chisquare(outputy[i], theoryp)
+    chi_sqr = chi_sqr + [chisqr]
+    p_list = p_list + [P]
+chisq_df = pd.DataFrame(list(zip(M,chi_sqr,p_list)),columns = ['m','Chi_sq','p'])
+
+data = []
+KS_list = []
+p_list_KS = []
+for i in range(0, len(M)):
+    theoryp = 2*(M[i]+1)*M[i]/(outputx[i]*(outputx[i]+1)*(outputx[i]+2))
+    data.append(stats.ks_2samp(outputy[i], theoryp))    
+    KS_list.append(data[i][0])
+    p_list_KS.append(data[i][1])
+KS_df = pd.DataFrame(list(zip(M,KS_list,p_list_KS)),columns = ['m','KS','p'])
+#%%
+'''Max K data'''
+k_mean = []
+k_std = []
+
+run = 20
+Ns = [10,100,1000,10000, 100000]
+m= 2
+ks = []
+for Nf in Ns:
+    k_max =[]
+    for i in range(run):
+        k, G = model(Nf, m)
+        k_max = k_max + [max(k)]
+    ks = ks + [k]
+    k_mean = k_mean + [np.mean(k_max)]
+    k_std = k_std + [np.std(k_max)]
+
+plt.errorbar(Ns,k_mean,yerr = k_std/np.sqrt(len(k_max)), fmk ='.k', color = 'red', label = 'Data')
+
+def line(x,A,B):
+    return A*x + B
+coef, cov = curve_fit(line,np.log(Ns),np.log(k_mean))
+
+plt.loglog(Ns, np.exp(line(np.log(Ns),*coef)),"--", color = "black", label = 'linear fit')
+x = np.linspace(10,100000,100)
+plt.plot(x,(-1+np.sqrt(1+ 4*m*x*(m+1)))/2,'r--',color = 'blue', label = 'Theoretical Prediction')
+plt.xlabel('$N$',fontsize = 20)
+plt.ylabel('$k_1$',fontsize = 20)
+plt.yscale('log')
+plt.xscale('log')
+plt.tick_params(axis='both',labelsize=15)
+plt.legend(loc='best',prop={'size':15})
+#%%
+'''Data Collapse'''
+m = 2
+Ns = [100, 1000, 10000, 100000]
+run = 50 
+
+outputx=[]
+outputy = []
+for Nf in Ns:
+    ks = []
+    for i in range(0,run):
+        k, G = model(Nf, m)    
+#        k = list(k)
+        ks = ks + [k]
+    k_flat = [item for sublist in ks for item in sublist]
+    kx, kprob = logbin(k_flat, 1.45)
+    outputx = outputx + [kx]
+    outputy = outputy + [kprob]
+
+for i in range(0,len(Ns)):
+    plt.loglog(outputx[i][1:]/np.sqrt(Ns[i]), outputy[i][1:]/(2*(m+1)*m/(outputx[i][1:]*(outputx[i][1:]+1)*(outputx[i][1:]+2))), '.', color=colours[i],label = 'N = '+str(Ns[i]))
+
+plt.xlabel('$k / k_1$',fontsize = 20)
+plt.ylabel('$P(k) / P_{\infty}(k)$',fontsize = 20)
+plt.legend()
